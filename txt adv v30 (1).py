@@ -1,25 +1,39 @@
-import datetime
-import time
 import sys
+import time
 
+#Colours
 try:
-    colour = sys.stdout.shell  # This works in IDLE
+    shell = sys.stdout.shell  # only exists in IDLE
+    def c(text, tag="console"):
+        shell.write(text + "\n", tag)
+    IDLE = True
 except AttributeError:
-    def dummy_write(text, tag=None):
+    def c(text, tag=None):
         print(text)
-    class DummyShell:
-        write = dummy_write
-    colour = DummyShell()
+    IDLE = False
 
+# IDLE colour tags used:
+#   "console"  → default white/black
+#   "STRING"   → green  (locations, scene descriptions)
+#   "KEYWORD"  → orange (important items, choices)
+#   "COMMENT"  → red    (death, danger)
+#   "ERROR"    → bright red (killer dialogue, threats)
+#   "stdout"   → blue   (Aidyn dialogue)
+#   "BUILTIN"  → purple (victory)
+#   "stderr"   → dark red (betrayal)
 
-def game():
-    tries = 0
-    back = 0
-    looking = 0
-    mid = 0
-    name = input("\nWhat is your name? ")
+#Metrics/helpers
+def pause(secs=0.6):
+    time.sleep(secs)
 
-    colour.write(f"""
+def blank():
+    c("")
+
+def divider():
+    c("─" * 52, "console")
+
+def title_card():
+    c(f"""
  _______                                            
 (  ___  )                    _                     
 | |___| |____  _____  ____ _| |_ _   _  ____ _____ 
@@ -27,131 +41,349 @@ def game():
 | |   | | |_| | ____| |     | |_| |_| | |   | ____|
 |_|   |_|  __/|_____)_|      \__)____/|_|   |_____)
         |_|                                        \n""", "STRING")
+    c("  A TEXT ADVENTURE", "KEYWORD")
+    blank()
 
-    colour.write("Your workplace has been locked down. There's a killer inside. You and Aidyn must survive.\n", "console")
-    colour.write(f"Hello {name}. You must move to a safe place as soon as possible.\n", "console")
+def ask(prompt_text):
+    return input(prompt_text).strip().lower()
 
-    def kill():
-        colour.write("You died.\n", "COMMENT")
-        quit()
+def slow_print(lines, tag="console", delay=0.55):
+    for line in lines:
+        c(line, tag)
+        pause(delay)
 
-    def corridor():
-        colour.write("You see a long corridor stretching ahead...\n", "console")
+#Game
+def game():
+    title_card()
 
-    def middle():
-        colour.write("Storage room. It smells like bleach and something else... You find a swiss knife.\n", "console")
+    c("Your workplace has been locked down.", "console")
+    c("A killer is somewhere inside.", "console")
+    c("You and your colleague Aidyn must survive.", "console")
+    blank()
 
-    def middle2():
-        colour.write("You're in the common room. Aidyn is nervous.\n", "console")
-        hideroom1()
+    name = input("What is your name? ").strip()
+    if not name:
+        name = "Stranger"
 
-    def look():
-        colour.write("Aidyn: Hurry up before you're pulverized!\n", "ERROR")
+    blank()
+    divider()
+    c(f"Hello, {name}.", "KEYWORD")
+    c("Move to safety as quickly as you can.", "console")
+    divider()
+    blank()
 
-    def look2():
-        colour.write(f"Aidyn: Please, stop looking {name}, we're going to die.\n", "stdout")
+    #State of player
+    inventory = []
+    moves     = 0
+    flags = {
+        "looked":        0,
+        "went_back":     0,
+        "in_storage":    False,
+        "knife_taken":   False,
+        "in_common":     False,
+        "common_visits": 0,
+        "aidyn_trust":   3,   # decrements with suspicion
+    }
 
-    def look3():
-        colour.write("Your heart pounds... Something is wrong with Aidyn.\n", "console")
-        colour.write(f"Aidyn: It's been fun, {name}, but goodbye.\n", "stderr")
-        endall()
+    def stat_line():
+        inv = ", ".join(inventory) if inventory else "nothing"
+        c(f"  Moves: {moves}  |  Inventory: {inv}", "console")
 
-    def backward():
-        colour.write("???: Moving back won't save you.\n", "ERROR")
-        again()
-
-    def endall():
-        end()
-        end2()
-
-    def end():
-        colour.write(f"{name}, you've ruined everything.\n", "COMMENT")
-        again()
-
-    def end2():
-        colour.write("Aidyn betrays you.\n", "ERROR")
-        kill()
-        again()
-
-    def hideroom1():
-        colour.write("You hide. Someone enters. Silence follows...\n", "console")
-
-    def again():
-        retry = input("/aperture.exe has crashed. Restart? (yes/no): ").lower()
-        if retry in ["yes", "y", "1"]:
+    #Death message
+    def die(msg):
+        blank()
+        c(msg, "COMMENT")
+        pause(0.8)
+        c("YOU HAVE DIED.", "COMMENT")
+        blank()
+        restart()
+        
+    #Restart
+    def restart():
+        again = ask("Restart? (yes / no): ")
+        if again in ("yes", "y"):
+            blank()
             game()
-        elif retry in ["no", "n", "2"]:
-            quit()
+        elif again in ("no", "n"):
+            c("Goodbye.", "console")
+            sys.exit()
         else:
-            print("Type 'yes' or 'no'.")
-            again()
+            c("Please type yes or no.", "console")
+            restart()
 
-    def happyend():
-        colour.write("You reach the reception. Aidyn grins... suspiciously.\n", "console")
-        die = input("Do you want to kill Aidyn? (yes/no): ").lower()
+    #Rooms
+    def room_corridor():
+        c("CORRIDOR A", "STRING")
+        c("A long corridor stretches ahead of you. Fluorescent lights flicker.", "console")
+        c("There is a heavy door to your left marked STORAGE.", "console")
+        c("Aidyn stands close behind you, breathing fast.", "console")
 
-        if die.startswith("y"):
-            colour.write("You stab Aidyn. You win.\n", "BUILTIN")
-            kds = input("Kill or show mercy to the creator? (mercy/kill): ").lower()
-            if kds == "kill":
-                colour.write("The creator is dead.\n", "BUILTIN")
-                again()
-            elif kds == "mercy":
-                colour.write(f"You let me live... Thank you, {name}. You win.\n", "KEYWORD")
-                again()
+    def room_storage():
+        flags["in_storage"] = True
+        c("STORAGE ROOM", "STRING")
+        c("The smell of bleach hits you hard. Wire shelves line the walls.", "console")
+        if not flags["knife_taken"]:
+            c("Something glints on the lower shelf — a swiss army knife.", "KEYWORD")
+        else:
+            c("The shelf where the knife was is empty.", "console")
+
+    def room_common():
+        flags["in_common"] = True
+        flags["common_visits"] += 1
+        c("COMMON ROOM", "STRING")
+        if flags["common_visits"] == 1:
+            c("Vending machines, cheap chairs, a kitchenette.", "console")
+            c("Aidyn is here, pacing by the window.", "console")
+        else:
+            c("You're back in the common room. Aidyn watches you carefully.", "console")
+            if flags["aidyn_trust"] <= 1:
+                c("Something in Aidyn's eyes has changed.", "stderr")
+
+    def room_reception():
+        c("RECEPTION", "STRING")
+        c("The main lobby. Emergency lighting. The front doors are chained shut.", "console")
+        c(f"Aidyn grins at you, {name}. It is not a comforting grin.", "stderr")
+
+    #Dialogues
+    def aidyn_says(line):
+        c(f"Aidyn: {line}", "stdout")
+
+    def aidyn_threat(line):
+        c(f"Aidyn: {line}", "ERROR")
+
+    #Actions
+    def do_look():
+        nonlocal moves
+        flags["looked"] += 1
+        moves += 1
+        if flags["looked"] == 1:
+            aidyn_says("Hurry up before you're pulverized!")
+        elif flags["looked"] == 2:
+            aidyn_says(f"Please, stop looking around, {name}. We're going to die.")
+            flags["aidyn_trust"] -= 1
+        elif flags["looked"] >= 3:
+            c("Your heart pounds. Something is very wrong with Aidyn.", "console")
+            pause(0.8)
+            aidyn_threat(f"It's been fun, {name} — but goodbye.")
+            pause(0.6)
+            die(f"Aidyn was the killer all along.")
+
+    def do_examine(target):
+        nonlocal moves
+        moves += 1
+        if target in ("knife", "swiss", "blade") and flags["in_storage"]:
+            if flags["knife_taken"]:
+                c("You already have the knife.", "console")
             else:
-                print("You must choose.")
-                happyend()
-        elif die == "no":
-            colour.write("Aidyn kills you.\n", "COMMENT")
-            end2()
+                c("A red-handled swiss army knife. Still sharp.", "KEYWORD")
+        elif target in ("door", "doors"):
+            c("Heavy, sealed. The chains on the front doors look new.", "console")
+        elif target in ("aidyn",):
+            flags["aidyn_trust"] -= 1
+            if flags["aidyn_trust"] >= 2:
+                aidyn_says("What are you staring at? Keep moving.")
+            else:
+                aidyn_threat("Stop looking at me like that.")
+        elif target in ("shelf", "shelves"):
+            c("Wire shelves. Cleaning products. A dusty binder labelled MAINTENANCE.", "console")
         else:
-            print("Choose one.")
-            happyend()
+            c("You don't see anything notable there.", "console")
 
-    room = "start"
+    def do_take(target):
+        nonlocal moves
+        moves += 1
+        if target in ("knife", "swiss", "blade", "swiss army knife"):
+            if not flags["in_storage"]:
+                c("There's no knife here.", "console")
+            elif flags["knife_taken"]:
+                c("You already have it.", "console")
+            else:
+                flags["knife_taken"] = True
+                inventory.append("swiss army knife")
+                c("You take the swiss army knife.", "KEYWORD")
+                aidyn_says("Good thinking. Let's keep moving.")
+        else:
+            c(f"You can't take that.", "console")
 
-    while room == "start":
-        looking += 1
-        print("\nActions available: forward, middle, backward, look, end")
-        action = input("> ").lower()
+    def do_talk():
+        nonlocal moves
+        moves += 1
+        flags["aidyn_trust"] -= 1
+        if flags["aidyn_trust"] >= 2:
+            aidyn_says("There's no time to talk. We need to get out.")
+        elif flags["aidyn_trust"] == 1:
+            aidyn_says("Stop wasting time, or I'll leave you behind.")
+        else:
+            aidyn_threat(f"I warned you, {name}.")
+            die("Aidyn turns on you. You were too slow to react.")
 
-        if action == "forward":
-            tries += 1
-            if tries == 1:
-                middle2()
-            elif tries == 2:
-                middle()
-            elif tries >= 3:
-                endall()
+    def do_inventory():
+        if inventory:
+            c("You are carrying:", "KEYWORD")
+            for item in inventory:
+                c(f"  · {item}", "KEYWORD")
+        else:
+            c("You are carrying nothing.", "console")
 
-        elif action == "backward":
-            back += 1
-            if back == 1:
-                backward()
+    #Endings
+    def ending_reception():
+        blank()
+        room_reception()
+        blank()
+        pause(0.8)
+        c("Aidyn steps between you and the door.", "console")
+        blank()
 
-        elif action == "middle":
-            mid += 1
-            if mid == 1:
-                middle()
-            elif mid == 2:
-                middle2()
-            elif mid >= 3:
-                happyend()
+        if flags["knife_taken"]:
+            c("Your hand tightens around the knife in your pocket.", "KEYWORD")
+            choice = ask("Do you confront Aidyn? (yes / no): ")
+            if choice in ("yes", "y", "confront"):
+                blank()
+                c("You draw the knife.", "KEYWORD")
+                pause(0.6)
+                c("Aidyn hesitates. Just long enough.", "console")
+                pause(0.8)
+                blank()
+                c("You survive.", "BUILTIN")
+                c(f"Well played, {name}.", "BUILTIN")
+                blank()
+                restart()
+            else:
+                die("You hesitate. Aidyn does not.")
+        else:
+            c("You have nothing to defend yourself with.", "COMMENT")
+            pause(0.7)
+            die("Aidyn was the killer. You never stood a chance.")
 
-        elif action == "look":
-            if looking == 1:
-                look()
-            elif looking == 2:
-                look2()
-            elif looking >= 3:
-                look3()
+    def ending_flee_back():
+        nonlocal moves
+        flags["went_back"] += 1
+        moves += 1
+        if flags["went_back"] == 1:
+            c("A voice behind you, low and calm:", "console")
+            c("???: Moving backwards won't help you.", "ERROR")
+            blank()
+            c("You are back at the start of the corridor.", "console")
+            room_corridor()
+        else:
+            die("You ran — and ran directly into the killer.")
 
-        elif action == "end":
-            end()
+    #Main
+    location = "corridor"
+    room_corridor()
+    blank()
+
+    while True:
+        stat_line()
+        blank()
+        raw = ask("> ")
+        blank()
+        tokens = raw.strip().lower().split()
+        if not tokens:
+            c("Pardon?", "console")
+            continue
+
+        verb = tokens[0]
+        obj  = " ".join(tokens[1:]) if len(tokens) > 1 else ""
+
+        #Quit/Help menu
+        if verb in ("quit", "exit", "q"):
+            c("Goodbye.", "console")
+            sys.exit()
+
+        if verb == "help":
+            c("COMMANDS:", "KEYWORD")
+            c("  go [forward / back / middle]", "console")
+            c("  look                          — examine your surroundings", "console")
+            c("  examine [thing]               — look closely at something", "console")
+            c("  take [item]                   — pick something up", "console")
+            c("  talk to aidyn                 — speak with Aidyn", "console")
+            c("  inventory                     — check what you're carrying", "console")
+            c("  quit                          — end the game", "console")
+            continue
+
+        #Check inventory
+        if verb in ("inventory", "i", "inv"):
+            do_inventory()
+            continue
+
+        #Look around
+        if verb == "look" and not obj:
+            do_look()
+            continue
+
+        #Examine
+        if verb in ("examine", "x", "inspect", "look") and obj:
+            do_examine(obj)
+            continue
+
+        #Take
+        if verb in ("take", "get", "grab", "pick"):
+            item = obj.replace("up ", "").strip()
+            do_take(item)
+            continue
+
+        #Talk options
+        if verb in ("talk", "speak", "say", "ask") and "aidyn" in obj:
+            do_talk()
+            continue
+
+        #Movement
+        direction = ""
+        if verb in ("go", "move", "walk", "run", "head"):
+            direction = obj
+        elif verb in ("forward", "north", "ahead", "f"):
+            direction = "forward"
+        elif verb in ("back", "backward", "south", "b", "return", "retreat"):
+            direction = "back"
+        elif verb in ("middle", "left", "storage", "side"):
+            direction = "middle"
+
+        if direction in ("forward", "north", "ahead", "f", "front"):
+            if location == "corridor":
+                location = "common"
+                room_common()
+            elif location == "storage":
+                location = "common"
+                room_common()
+            elif location == "common":
+                location = "reception"
+                ending_reception()
+                break
+            else:
+                c("You can't go that way.", "console")
+
+        elif direction in ("back", "backward", "south", "b", "return", "retreat"):
+            if location == "corridor":
+                ending_flee_back()
+            elif location == "storage":
+                location = "corridor"
+                room_corridor()
+            elif location == "common":
+                location = "corridor"
+                room_corridor()
+            else:
+                c("There's nowhere to go back to.", "console")
+
+        elif direction in ("middle", "left", "storage", "side"):
+            if location == "corridor":
+                location = "storage"
+                room_storage()
+            elif location == "storage":
+                c("You're already in the storage room.", "console")
+            else:
+                c("There's no storage room accessible from here.", "console")
+
+        elif direction:
+            c(f"You can't go {direction} from here.", "console")
 
         else:
-            print("Try again.")
+            c("I don't understand that. Try HELP for a list of commands.", "console")
 
-# Start the game
-game()
+        blank()
+        moves += 1
+
+
+#Entry point
+if __name__ == "__main__":
+    game()
